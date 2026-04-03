@@ -28,10 +28,13 @@ func (server *server) routeMessage(message Request, c *Client) {
 	err := json.Unmarshal(message.Payload, &obj)
 	if err != nil {
 		server.log.Printf("Invalid request payload. %s.\n", err.Error())
-		c.send <- StatusResponse{
+		select {
+		case c.send <- StatusResponse{
 			MessageType:      STATUS,
 			NotificationType: DANGER,
 			Title:            "Unknown request payload.",
+		}:
+		case <-c.ctx.Done():
 		}
 	}
 
@@ -52,7 +55,10 @@ func (c *Client) startIrcConnection(server *server) {
 	err := core.Join(c.irc, server.config.Server, server.config.EnableTLS)
 	if err != nil {
 		c.log.Println(err)
-		c.send <- newErrorResponse("Unable to connect to IRC server.")
+		select {
+		case c.send <- newErrorResponse("Unable to connect to IRC server."):
+		case <-c.ctx.Done():
+		}
 		return
 	}
 
@@ -68,7 +74,8 @@ func (c *Client) startIrcConnection(server *server) {
 
 	go core.StartReader(c.ctx, c.irc, handler)
 
-	c.send <- ConnectionResponse{
+	select {
+	case c.send <- ConnectionResponse{
 		StatusResponse: StatusResponse{
 			MessageType:      CONNECT,
 			NotificationType: SUCCESS,
@@ -76,6 +83,8 @@ func (c *Client) startIrcConnection(server *server) {
 			Detail:           fmt.Sprintf("IRC username %s", c.irc.Username),
 		},
 		Name: c.irc.Username,
+	}:
+	case <-c.ctx.Done():
 	}
 }
 
@@ -88,7 +97,10 @@ func (c *Client) sendSearchRequest(s *SearchRequest, server *server) {
 
 	if time.Now().Before(nextAvailableSearch) {
 		remainingSeconds := time.Until(nextAvailableSearch).Seconds()
-		c.send <- newRateLimitResponse(remainingSeconds)
+		select {
+		case c.send <- newRateLimitResponse(remainingSeconds):
+		case <-c.ctx.Done():
+		}
 
 		return
 	}
@@ -96,11 +108,17 @@ func (c *Client) sendSearchRequest(s *SearchRequest, server *server) {
 	core.SearchBook(c.irc, server.config.SearchBot, s.Query)
 	server.lastSearch = time.Now()
 
-	c.send <- newStatusResponse(NOTIFY, "Search request sent.")
+	select {
+	case c.send <- newStatusResponse(NOTIFY, "Search request sent."):
+	case <-c.ctx.Done():
+	}
 }
 
 // handle DownloadRequests by sending the request to the book server
 func (c *Client) sendDownloadRequest(d *DownloadRequest) {
 	core.DownloadBook(c.irc, d.Book)
-	c.send <- newStatusResponse(NOTIFY, "Download request received.")
+	select {
+	case c.send <- newStatusResponse(NOTIFY, "Download request received."):
+	case <-c.ctx.Done():
+	}
 }

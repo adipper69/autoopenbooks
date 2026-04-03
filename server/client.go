@@ -50,7 +50,8 @@ type Client struct {
 	log *log.Logger
 
 	// Context is used to signal when this client should close.
-	ctx context.Context
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 // readPump pumps messages from the websocket connection to the hub.

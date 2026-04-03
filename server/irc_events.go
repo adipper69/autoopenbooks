@@ -28,14 +28,22 @@ func (c *Client) searchResultHandler(downloadDir string) core.HandlerFunc {
 		extractedPath, err := core.DownloadExtractDCCString(filepath.Join(downloadDir, "books"), text, nil)
 		if err != nil {
 			c.log.Println(err)
-			c.send <- newErrorResponse("Error when downloading search results.")
+			select {
+			case c.send <- newErrorResponse("Error when downloading search results."):
+			case <-c.ctx.Done():
+				c.log.Println("Client disconnected, dropping error response.")
+			}
 			return
 		}
 
 		bookResults, parseErrors, err := core.ParseSearchFile(extractedPath)
 		if err != nil {
 			c.log.Println(err)
-			c.send <- newErrorResponse("Error when parsing search results.")
+			select {
+			case c.send <- newErrorResponse("Error when parsing search results."):
+			case <-c.ctx.Done():
+				c.log.Println("Client disconnected, dropping error response.")
+			}
 			return
 		}
 
@@ -53,7 +61,11 @@ func (c *Client) searchResultHandler(downloadDir string) core.HandlerFunc {
 		}
 
 		c.log.Printf("Sending %d search results.\n", len(bookResults))
-		c.send <- newSearchResponse(bookResults, parseErrors)
+		select {
+		case c.send <- newSearchResponse(bookResults, parseErrors):
+		case <-c.ctx.Done():
+			c.log.Println("Client disconnected, dropping search response.")
+		}
 
 		err = os.Remove(extractedPath)
 		if err != nil {
@@ -68,33 +80,57 @@ func (c *Client) bookResultHandler(downloadDir string, disableBrowserDownloads b
 		extractedPath, err := core.DownloadExtractDCCString(filepath.Join(downloadDir, "books"), text, nil)
 		if err != nil {
 			c.log.Println(err)
-			c.send <- newErrorResponse("Error when downloading book.")
+			select {
+			case c.send <- newErrorResponse("Error when downloading book."):
+			case <-c.ctx.Done():
+				c.log.Println("Client disconnected, dropping error response.")
+			}
 			return
 		}
 
 		c.log.Printf("Sending book entitled '%s'.\n", filepath.Base(extractedPath))
-		c.send <- newDownloadResponse(extractedPath, disableBrowserDownloads)
+		select {
+		case c.send <- newDownloadResponse(extractedPath, disableBrowserDownloads):
+		case <-c.ctx.Done():
+			c.log.Println("Client disconnected, dropping download response.")
+		}
 	}
 }
 
 // NoResults is called when the server returns that nothing was found for the query
 func (c *Client) noResultsHandler(_ string) {
-	c.send <- newErrorResponse("No results found for the query.")
+	select {
+	case c.send <- newErrorResponse("No results found for the query."):
+	case <-c.ctx.Done():
+		c.log.Println("Client disconnected, dropping error response.")
+	}
 }
 
 // BadServer is called when the requested download fails because the server is not available
 func (c *Client) badServerHandler(_ string) {
-	c.send <- newErrorResponse("Server is not available. Try another one.")
+	select {
+	case c.send <- newErrorResponse("Server is not available. Try another one."):
+	case <-c.ctx.Done():
+		c.log.Println("Client disconnected, dropping error response.")
+	}
 }
 
 // SearchAccepted is called when the user's query is accepted into the search queue
 func (c *Client) searchAcceptedHandler(_ string) {
-	c.send <- newStatusResponse(NOTIFY, "Search accepted into the queue.")
+	select {
+	case c.send <- newStatusResponse(NOTIFY, "Search accepted into the queue."):
+	case <-c.ctx.Done():
+		c.log.Println("Client disconnected, dropping status response.")
+	}
 }
 
 // MatchesFound is called when the server finds matches for the user's query
 func (c *Client) matchesFoundHandler(num string) {
-	c.send <- newStatusResponse(NOTIFY, fmt.Sprintf("Found %s results for your query.", num))
+	select {
+	case c.send <- newStatusResponse(NOTIFY, fmt.Sprintf("Found %s results for your query.", num)):
+	case <-c.ctx.Done():
+		c.log.Println("Client disconnected, dropping status response.")
+	}
 }
 
 func (c *Client) pingHandler(serverUrl string) {

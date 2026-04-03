@@ -1,0 +1,153 @@
+--- core/search_parser.go
++++ core/search_parser.go
+@@ -107,46 +107,48 @@
+
+ // Parse line extracts data from a single line
+ func parseLine(line string) (BookDetail, error) {
+-
+-	//First check if it follows the correct format. Some servers don't include file info...
+-	if !strings.Contains(line, "::INFO::") {
+-		return BookDetail{}, errors.New("invalid line format. ::INFO:: not found")
+-	}
+-
+	var book BookDetail
+-	book.Full = line[:strings.Index(line, " ::INFO:: ")]
+-	var tmp int
++	book.Full = line
+
+	// Get Server
+-	if tmp = strings.Index(line, " "); tmp == -1 {
++	firstSpace := strings.Index(line, " ")
++	if firstSpace == -1 {
+		return BookDetail{}, errors.New("could not parse server")
+	}
+-	book.Server = line[1:tmp] // Skip the "!"
+-	line = line[tmp+1:]
++	book.Server = line[1:firstSpace] // Skip the "!"
++	rest := line[firstSpace+1:]
+
+-	// Get the Author
+-	if tmp = strings.Index(line, " - "); tmp == -1 {
+-		return BookDetail{}, errors.New("could not parse author")
++	infoIdx := strings.LastIndex(rest, " ::INFO::")
++	book.Size = "N/A"
++	if infoIdx != -1 {
++		sizeStr := strings.TrimSpace(rest[infoIdx+len(" ::INFO::"):])
++		book.Size = strings.Split(sizeStr, " ")[0]
++		book.Full = line[:firstSpace+1+infoIdx]
++		rest = strings.TrimSpace(rest[:infoIdx])
+	}
+-	book.Author = line[:tmp]
+-	line = line[tmp+len(" - "):]
+
+	// Get the Title
++	restLower := strings.ToLower(rest)
+	for _, ext := range fileTypes { //Loop through each possible file extension we've got on record
+-		tmp = strings.Index(line, "."+ext) // check if it contains our extension
+-		if tmp == -1 {
++		endTitle := strings.LastIndex(restLower, "."+ext) // check if it contains our extension
++		if endTitle == -1 || endTitle != len(rest)-len(ext)-1 {
+			continue
+		}
+		book.Format = ext
+		if ext == "rar" || ext == "zip" { // If the extension is .rar or .zip the actual format is contained in ()
+			for _, ext2 := range fileTypes[:len(fileTypes)-2] { // Range over the eBook formats (exclude archives)
+-				if strings.Contains(line[:tmp], ext2) {
++				if strings.Contains(restLower[:endTitle], ext2) {
+					book.Format = ext2
+				}
+			}
+		}
+-		book.Title = line[:tmp]
+-		line = line[tmp+len(ext)+1:]
++		dashIdx := strings.Index(rest, " - ")
++		if dashIdx == -1 {
++			book.Author = ""
++			book.Title = rest[:endTitle]
++		} else {
++			book.Author = rest[:dashIdx]
++			if strings.Contains(book.Author, "%") {
++				parts := strings.SplitN(book.Author, " ", 2)
++				if len(parts) == 2 {
++					book.Author = parts[1]
++				}
++			}
++			book.Title = rest[dashIdx+len(" - ") : endTitle]
++		}
++		break
+	}
+
+	if book.Title == "" { // Got through the entire loop without finding a single match
+		return BookDetail{}, errors.New("could not parse title")
+	}
+
+-	// Get the Size
+-	if tmp = strings.Index(line, "::INFO:: "); tmp == -1 {
+-		return BookDetail{}, errors.New("could not parse size")
+-	}
+-
+-	line = strings.TrimSpace(line)
+-	splits := strings.Split(line, " ")
+-
+-	if len(splits) >= 2 {
+-		book.Size = splits[1]
+-	}
+-
+	return book, nil
+ }
+
+@@ -165,14 +167,16 @@
+		firstSpace := strings.Index(line, " ")
+		dashChar := strings.Index(line, " - ")
+		if dashChar == -1 {
+-			return "", errors.New("unable to parse author")
++			return "", nil
+		}
+		author := line[firstSpace+len(" ") : dashChar]
+
+		// Handles case with weird author characters %\w% ("%F77FE9FF1CCD% Michael Haag")
+		if strings.Contains(author, "%") {
+			split := strings.SplitAfterN(author, " ", 2)
+-			return split[1], nil
++			if len(split) == 2 {
++				return split[1], nil
++			}
+		}
+
+		return author, nil
+	}
+
+	getTitle := func(line string) (string, string, int) {
+		title := ""
+		fileFormat := ""
+		endIndex := -1
++		lineLower := strings.ToLower(line)
+		// Get the Title
+		for _, ext := range fileTypes { //Loop through each possible file extension we've got on record
+-			endTitle := strings.Index(line, "."+ext) // check if it contains our extension
++			endTitle := strings.LastIndex(lineLower, "."+ext) // check if it contains our extension
+			if endTitle == -1 {
+				continue
+			}
+			fileFormat = ext
+			if ext == "rar" || ext == "zip" { // If the extension is .rar or .zip the actual format is contained in ()
+				for _, ext2 := range fileTypes[:len(fileTypes)-2] { // Range over the eBook formats (exclude archives)
+-					if strings.Contains(strings.ToLower(line[:endTitle]), ext2) {
++					if strings.Contains(lineLower[:endTitle], ext2) {
+						fileFormat = ext2
+					}
+				}
+			}
+			startIndex := strings.Index(line, " - ")
+-			title = line[startIndex+len(" - ") : endTitle]
++			if startIndex == -1 {
++				firstSpace := strings.Index(line, " ")
++				title = line[firstSpace+len(" ") : endTitle]
++			} else {
++				title = line[startIndex+len(" - ") : endTitle]
++			}
+			endIndex = endTitle
+		}
+
+		return title, fileFormat, endIndex
+	}

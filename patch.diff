@@ -1,0 +1,51 @@
+--- core/search_parser.go
++++ core/search_parser.go
+@@ -165,11 +165,14 @@
+		firstSpace := strings.Index(line, " ")
+		dashChar := strings.Index(line, " - ")
+		if dashChar == -1 {
+-			return "", errors.New("unable to parse author")
++			return "", nil
+		}
+		author := line[firstSpace+len(" ") : dashChar]
+
+		// Handles case with weird author characters %\w% ("%F77FE9FF1CCD% Michael Haag")
+		if strings.Contains(author, "%") {
+			split := strings.SplitAfterN(author, " ", 2)
+-			return split[1], nil
++			if len(split) == 2 {
++				return split[1], nil
++			}
+		}
+
+		return author, nil
+@@ -180,9 +183,10 @@
+		fileFormat := ""
+		endIndex := -1
++		lineLower := strings.ToLower(line)
+		// Get the Title
+		for _, ext := range fileTypes { //Loop through each possible file extension we've got on record
+-			endTitle := strings.Index(line, "."+ext) // check if it contains our extension
++			endTitle := strings.LastIndex(lineLower, "."+ext) // check if it contains our extension
+			if endTitle == -1 {
+				continue
+			}
+@@ -190,12 +194,18 @@
+			if ext == "rar" || ext == "zip" { // If the extension is .rar or .zip the actual format is contained in ()
+				for _, ext2 := range fileTypes[:len(fileTypes)-2] { // Range over the eBook formats (exclude archives)
+-					if strings.Contains(strings.ToLower(line[:endTitle]), ext2) {
++					if strings.Contains(lineLower[:endTitle], ext2) {
+						fileFormat = ext2
+					}
+				}
+			}
+			startIndex := strings.Index(line, " - ")
+-			title = line[startIndex+len(" - ") : endTitle]
++			if startIndex == -1 {
++				firstSpace := strings.Index(line, " ")
++				title = line[firstSpace+len(" ") : endTitle]
++			} else {
++				title = line[startIndex+len(" - ") : endTitle]
++			}
+			endIndex = endTitle
+		}

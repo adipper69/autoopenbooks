@@ -105,3 +105,8 @@ go build -tags webview
   - Redux / Redux Toolkit
   - Mantine UI / @emotion/react
   - Framer Motion
+
+## Changelog / Code Updates
+
+- **Previous Updates:** Fixed and updated the repository based on recent PR merges.
+- **Client Disconnect Panic Fix:** Refactored websocket and IRC event handlers to gracefully handle client disconnects. Eliminated a crash (panic: send on closed channel) by tying `cancel context.CancelFunc` to the `Client` struct, cancelling instead of closing channels on unregistration, and wrapping background job channel sends in a `select` listening to the context.
